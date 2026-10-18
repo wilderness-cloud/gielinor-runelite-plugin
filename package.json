@@ -1,0 +1,25 @@
+{
+  "name": "gielinor-runelite-plugin",
+  "private": true,
+  "description": "Release tooling for the Gielinor RuneLite plugin. The shipped code is the Gradle project at the root; this manifest exists only to pin semantic-release.",
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wilderness-cloud/gielinor-runelite-plugin.git"
+  },
+  "engines": {
+    "node": ">=22.14"
+  },
+  "scripts": {
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run --no-ci",
+    "verify:release": "node release/verify-config.mjs && node --test release/*.test.mjs"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "conventional-changelog-conventionalcommits": "^10.4.1",
+    "semantic-release": "^25.0.9"
+  }
+}

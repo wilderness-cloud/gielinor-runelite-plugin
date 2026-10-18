@@ -1,0 +1,164 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # build.gradle builds against RuneLite's `latest.release`, so main can break
+  # without a commit here: a weekly run catches the day RuneLite moves its client,
+  # or the protobuf-javalite it ships, out from under the generated code.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+# A second push to a PR makes the first run's result irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # A Windows checkout has no exec bit to lose, so a mode dropped from the index
+  # is invisible locally and only shows up here as a bare "exit code 126".
+  # All of these are invoked as ./path by CI or by semantic-release.
+  exec-bits:
+    name: exec bits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scripts invoked directly must be executable
+        run: |
+          status=0
+          for f in gradlew scripts/*.sh release/*.sh; do
+            if [ -x "$f" ]; then
+              echo "ok   $f"
+            else
+              echo "::error file=$f::$f is not executable, so running it gives exit code 126." \
+                "Fix with: git update-index --chmod=+x $f"
+              status=1
+            fi
+          done
+          exit $status
+
+  plugin:
+    name: plugin (Java 11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Java 11: the client runs on it, and build.gradle pins release 11. Building
+      # on a newer JDK would let through API that the client's JVM cannot load.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: gradle
+
+      # The tests, plus the 90% line and branch gate (gradle/coverage.gradle).
+      - name: Test with coverage
+        run: scripts/coverage.sh --no-daemon
+
+      - name: Build jar
+        run: ./gradlew --no-daemon jar
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: build/reports/jacoco/test/html/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Named for the commit so a reviewer can sideload the exact build under review.
+      - uses: actions/upload-artifact@v5
+        with:
+          name: gielinor-runelite-plugin-${{ github.sha }}
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  # The wire contract's Java is generated but committed (build=standard cannot run
+  # protoc). Regenerate it from the pinned registry commit and fail on any drift:
+  # a hand edit, or a pin bump without a `scripts/generate.sh`.
+  codegen:
+    name: generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The version AGENTS.md names; generation is only reproducible on it.
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: "1.73.0"
+          setup_only: true
+
+      - name: Regenerate
+        run: scripts/generate.sh
+
+      - name: Fail on any difference
+        run: |
+          changes=$(git status --porcelain -- src/main/java)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            git diff --stat -- src/main/java
+            echo "::error::The generated code does not match buf.gen.yaml's pin." \
+              "Run scripts/generate.sh (buf 1.73.0) and commit the result; never edit it by hand."
+            exit 1
+          fi
+          echo "generated code matches the pinned contract"
+
+  # Versioning is driven by the merged PR's label (see CONTRIBUTING.md), so a PR
+  # without one would merge and release nothing. Catch it while it is still open.
+  version-label:
+    name: version label
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require exactly one of major, minor, patch
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          matched=$(jq -r '.[] | select(. == "major" or . == "minor" or . == "patch")' <<< "$LABELS")
+          count=$(grep -c . <<< "$matched" || true)
+
+          if [ "$count" -eq 1 ]; then
+            echo "Release type: $matched"
+            exit 0
+          fi
+
+          if [ "$count" -eq 0 ]; then
+            echo "::error::This PR has no version label. Add exactly one of 'major', 'minor' or 'patch' —" \
+              "merging is what cuts the release, and an unlabelled merge releases nothing."
+          else
+            echo "::error::This PR has more than one version label ($(tr '\n' ' ' <<< "$matched"))." \
+              "Keep exactly one, so the release type is unambiguous."
+          fi
+          exit 1
+
+  # The release workflow runs semantic-release from this config, so a typo in it
+  # would otherwise only surface at merge, with review closed and the PR gone.
+  #
+  # Deliberately not `semantic-release --dry-run`: that calls verifyAuth
+  # unconditionally — a real `git push --dry-run` — even in dry-run mode, so it
+  # needs a write-capable token, and a job that runs on pull requests must not
+  # have one. verify-config.mjs checks what actually breaks instead.
+  release-config:
+    name: release config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install release tooling
+        run: npm ci
+
+      - name: Verify the release config
+        run: npm run verify:release

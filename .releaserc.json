@@ -1,0 +1,63 @@
+{
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    "./release/label-release-type.mjs",
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "presetConfig": {
+          "types": [
+            { "type": "feat", "section": "Features" },
+            { "type": "fix", "section": "Fixes" },
+            { "type": "perf", "section": "Performance" },
+            { "type": "refactor", "section": "Refactoring" },
+            { "type": "docs", "section": "Documentation" },
+            { "type": "test", "section": "Tests" },
+            { "type": "build", "section": "Build and release" },
+            { "type": "ci", "section": "Build and release" },
+            { "type": "chore", "section": "Housekeeping" },
+            { "type": "revert", "section": "Reverts" }
+          ]
+        }
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md",
+        "changelogTitle": "# Changelog\n\nEvery release is cut by semantic-release from a merged PR's version label. See CONTRIBUTING.md."
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "release/build-jar.sh ${nextRelease.version}",
+        "successCmd": "release/hub-entry.sh ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md", "src/main/java/cloud/tobbbles/gielinor/runelite/GielinorPlugin.java"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "build/libs/gielinor-*.jar",
+            "label": "Gielinor plugin ${nextRelease.version} (sideload jar)"
+          },
+          {
+            "path": "build/libs/gielinor-*.jar.sha256",
+            "label": "SHA-256 checksum"
+          }
+        ]
+      }
+    ]
+  ]
+}

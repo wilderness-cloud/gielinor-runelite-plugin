@@ -11,3 +11,6 @@ nb-configuration.xml
 nbproject/
 *.class
 .DS_Store
+
+# The root npm install is the release toolchain (package.json)
+node_modules/

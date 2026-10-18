@@ -1,0 +1,20 @@
+# Only the files whose line endings actually matter are pinned. Deliberately no
+# blanket `* text=auto`: the repository already stores LF throughout, and turning
+# normalisation on would rewrite every source file in existing Windows checkouts
+# for no gain.
+
+# Windows batch files need CRLF: a .bat checked out with LF endings can mis-parse
+# labels and multi-line blocks. (gradlew.bat is already stored with CRLF.)
+*.bat -text
+
+# Run by a POSIX shell in CI, so they must stay LF even in a Windows checkout —
+# a CR at the end of a shebang or a command line makes a script unrunnable.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Generated: keep it out of diffs and language stats.
+src/main/java/cloud/tobbbles/gielinor/runelite/v1/** linguist-generated=true
+package-lock.json linguist-generated=true
+
+*.jar binary
+*.png binary

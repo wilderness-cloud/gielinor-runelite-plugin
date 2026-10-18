@@ -285,9 +285,6 @@ most sensitive thing the plugin could send.
   - Checked 18 Oct 2026: against RuneLite client 1.13.2, `compileClasspath` resolves
     `protobuf-javalite` 3.21.12, and `WireContractTest` round-trips a `PushRequest` with a
     `skills.ATTACK` mask path through it.
-  - CI regenerates it and fails on any diff.
-  - A CI job builds against `latest.release`, which catches the day RuneLite moves its protobuf
-    version.
 - **Tests.**
   - JUnit only (the Hub's standard build gives tests nothing else): `FakeGame` for the
     collectors, readers and `GameSession`; `FakeHttp` (an OkHttp interceptor) for
@@ -297,9 +294,17 @@ most sensitive thing the plugin could send.
     the classes that only touch RuneLite: `GielinorPlugin`, `ClientGame`, `GielinorPanel`.
   - A contract test that decodes our pushes with the relay's own schema (round trip through the
     generated classes).
-- **Release.** A `v*` tag runs a workflow that builds and tests the tagged commit, then prints
-  the Hub entry for it (`plugins/gielinor`: `repository=`, `commit=`, `warning=`, `authors=`).
-  Updating the Hub is then a one-line pull request to `runelite/plugin-hub`.
+- **CI** (`.github/workflows/ci.yml`, on PRs, `main` and weekly): `scripts/coverage.sh` and the
+  jar on Java 11; `scripts/generate.sh` with buf 1.73.0, failing on any diff; the scripts' exec
+  bits; the PR's version label; and the release config. The weekly run is the one that catches
+  RuneLite moving `latest.release` (and its protobuf runtime) without a commit here.
+- **Release.** Merging a PR labelled `major`, `minor` or `patch` runs semantic-release
+  (`.github/workflows/release.yml`, as in `runelite-mcp-server-plugin`): it writes the version
+  into `GielinorPlugin.VERSION` (the only copy, since the Hub replaces `build.gradle`), tests and
+  builds `gielinor-<version>.jar`, commits the bump and `CHANGELOG.md`, tags `v<version>`,
+  publishes a GitHub release with the jar, and prints the Hub entry for the tagged commit
+  (`plugins/gielinor`: `repository=`, `commit=`, `warning=`, `authors=`) in the run's summary.
+  Updating the Hub is then a pull request to `runelite/plugin-hub`. See `CONTRIBUTING.md`.
 - **Running it locally** uses the template's `run` task (developer mode). A Jagex account needs
   the developer client's account guide, linked from the Hub README.
 

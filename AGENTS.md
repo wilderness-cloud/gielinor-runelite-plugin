@@ -31,6 +31,9 @@ it records what RuneLite's Hub allows and why the plugin is shaped the way it is
   tests, so don't add Mockito or MockWebServer.
 - **Coverage:** `scripts/coverage.sh` must pass (90% of lines and branches). Read the game
   through `Game`, not `Client`, so new logic stays testable.
+- **Releases are cut by merging a PR labelled `major`, `minor` or `patch`** (`CONTRIBUTING.md`).
+  The release writes `GielinorPlugin.VERSION`, the only copy of the version: don't bump it by
+  hand, and keep its line's shape, which `release/build-jar.sh` rewrites.
 
 # RuneLite plugin development (from RuneLite's example-plugin template)
 
