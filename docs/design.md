@@ -90,7 +90,7 @@ Sources, read 18 Oct 2026:
 | New plugins (from 14 Oct 2026) with "significant functionality locked behind paid external services" are prohibited. | Linking needs a Gielinor account, which is free; nothing is sold. **Risk:** the account service is invitation-only today. Submit once anyone can sign up, or ask the reviewers first. |
 | The Hub builds **one repository, from its root**, at a pinned commit (`repository=`, `commit=`); there is no subdirectory field. | This repository is the Hub's: `build.gradle` at the root, and the Hub entry pins a commit of it. It must be **public** before submission (private while it's being built). |
 | `build=standard` replaces our `build.gradle` with the Hub's; `gradle` keeps ours. | `standard`: we need nothing beyond RuneLite's client, and it gets the quicker review. |
-| A `LICENSE` (the Hub suggests BSD 2-Clause); `icon.png` at most 48×72 at the root. | `LICENSE` is BSD-2-Clause. `icon.png` comes with the first release. |
+| A `LICENSE` (the Hub suggests BSD 2-Clause); `icon.png` at most 48×72 at the root. | `LICENSE` is BSD-2-Clause. `icon.png` (48×48) is the site's favicon, rendered from its SVG; the side panel's 16×16 icon is the same. |
 | Reviews are done by people and, since April 2026, an automated bot that can approve simple updates. | Small, plain updates. Keep anything that needs a human (new endpoints, new data) in releases of its own. |
 
 **The Hub warning**, adapted from WikiSync's ("Similar to the official HiScores, this plugin
