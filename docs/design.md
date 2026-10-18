@@ -1,6 +1,39 @@
 # The Gielinor RuneLite plugin: design
 
-Status: **design** (18 Oct 2026). No code yet.
+Status: **design** (18 Oct 2026). The build and the generated wire contract are set up; the
+plugin itself is not written yet.
+
+```mermaid
+flowchart TB
+  subgraph pc["Player's PC"]
+    game["RuneLite client"]
+    collectors["Collectors<br/>(client thread)"]
+    pusher["Pusher<br/>dirty set · seq · heartbeat"]
+    panel["Side panel<br/>Link / Unlink"]
+    desktop["Gielinor desktop app"]
+  end
+
+  browser["Player's browser"]
+
+  subgraph edge["gielinor.tobbbles.cloud"]
+    account["Account service<br/>device grant · tokens · introspection"]
+    relay["RuneLite relay<br/>Durable Object per account"]
+  end
+
+  game -->|"game events"| collectors
+  collectors -->|"state slices + changed paths"| pusher
+  panel -->|"1 · ask for a code<br/>4 · poll, then refresh tokens<br/>(scope runelite:push)"| account
+  panel -.->|"2 · open the approval page"| browser
+  browser -->|"3 · sign in and approve"| account
+  pusher ==>|"Push: binary protobuf over Connect<br/>Bearer runelite:push"| relay
+  relay -->|"acked_seq, missing, wanted,<br/>next heartbeat"| pusher
+  relay -->|"introspect token (cached 5 min)"| account
+  desktop -->|"GetState, ReadEvents<br/>(runelite:read)"| relay
+```
+
+Linking (1–4) happens once. After that the plugin only pushes, and the relay only answers its
+pushes. Nothing ever connects to the game client, and the desktop reads the player's state from
+the relay, never from RuneLite.
 
 The Gielinor plugin is a RuneLite plugin, published on the Plugin Hub. It sends a player's
 character state to the RuneLite relay, and the desktop app reads it back from there. It
@@ -66,8 +99,11 @@ pushes up data about your character that can be viewed by anyone…"). Ours isn'
 > equipment) and your IP address to Gielinor's server, which is not controlled or verified by
 > the RuneLite developers. It is only visible to you, in the Gielinor app.
 
-The config item's warning repeats the first sentence, so the player sees it at the moment they
-switch sending on.
+The config item that switches sending on is **off by default** and carries RuneLite's standard
+wording, as the example-plugin template's `AGENTS.md` requires for any setting that talks to a
+third-party server: "This feature submits your IP address to a 3rd-party server not controlled or
+verified by RuneLite developers". We append what is sent, so the player sees both at the moment
+they switch it on. Linking turns it on (the panel says so first); unlinking turns it off.
 
 ### Where the token lives
 
@@ -103,7 +139,7 @@ src/main/java/cloud/tobbbles/gielinor/runelite/
   relay/RelayClient.java        # Connect unary POST, binary protobuf, gRPC status mapping
   relay/Pusher.java             # dirty set, debounce, seq, heartbeat, backoff, masks
   state/*Collector.java         # one per domain: game state → CharacterState field + dirty paths
-src/main/java/gielinor/runelite/v1/...   # generated (java_package via managed mode), committed
+src/main/java/cloud/tobbbles/gielinor/runelite/v1/   # generated (managed mode's java_package_prefix), committed
 src/test/java/...
 ```
 
@@ -210,9 +246,15 @@ most sensitive thing the plugin could send.
 
 ## Build, test, release
 
-- **Code generation.** `buf generate` writes the lite Java with `protocolbuffers/java`
-  **v21.12**, matching RuneLite's runtime, from the registry module pinned in `buf.gen.yaml`.
-  The generated code is committed (`build=standard` can't run protoc).
+- **Code generation** (set up). `scripts/generate.sh` clears the generated package and runs
+  `buf generate` (buf 1.73.0). It writes lite Java with the registry's `protocolbuffers/java`
+  **v21.12**, from the module commit pinned in `buf.gen.yaml`, into
+  `src/main/java/cloud/tobbbles/gielinor/runelite/v1/` (managed mode prefixes the proto package
+  with `cloud.tobbbles`). The generated code is committed, because `build=standard` can't run
+  protoc, and it can't live outside `src/main/java`, because the Hub replaces our `build.gradle`.
+  - Checked 18 Oct 2026: against RuneLite client 1.13.2, `compileClasspath` resolves
+    `protobuf-javalite` 3.21.12, and `WireContractTest` round-trips a `PushRequest` with a
+    `skills.ATTACK` mask path through it.
   - CI regenerates it and fails on any diff.
   - A CI job builds against `latest.release`, which catches the day RuneLite moves its protobuf
     version.
