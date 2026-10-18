@@ -1,0 +1,22 @@
+# Generates the wire contract's Java (lite) into src/main/java. Run scripts/generate.sh,
+# not `buf generate` directly: it clears the old generated package first (buf's `clean`
+# would empty all of src/main/java, which holds our own code too).
+#
+# The input is the desktop repository's proto/ as published to the Buf Schema Registry,
+# pinned to a registry commit so generation is reproducible. Move the pin when the contract
+# changes: `buf registry module commit list buf.build/wilderness-cloud/gielinor`.
+version: v2
+inputs:
+  - module: buf.build/wilderness-cloud/gielinor:190fa6bba5704574a1aad6f0738f7a34
+managed:
+  enabled: true
+  override:
+    # gielinor.runelite.v1 -> cloud.tobbbles.gielinor.runelite.v1
+    - file_option: java_package_prefix
+      value: cloud.tobbbles
+plugins:
+  # v21.12 matches the protobuf-javalite 3.21.12 that RuneLite's client exposes to
+  # plugins. Don't move past the runtime RuneLite ships.
+  - remote: buf.build/protocolbuffers/java:v21.12
+    out: src/main/java
+    opt: [lite]
