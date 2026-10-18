@@ -53,7 +53,7 @@ import okhttp3.OkHttpClient;
 )
 public class GielinorPlugin extends Plugin
 {
-	static final String VERSION = "0.2.0";
+	static final String VERSION = "0.1.0";
 
 	@Inject
 	private Client client;
