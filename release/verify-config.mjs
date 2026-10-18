@@ -70,6 +70,41 @@ for (const entry of config.plugins ?? []) {
 	}
 }
 
+// Resolving is not enough: a preset can load and still fail to render against
+// the changelog writer release-notes-generator ships (preset 10 needs writer 9).
+// So render notes for a sample commit, offline, with the real config.
+const notesEntry = (config.plugins ?? []).find((entry) =>
+	(Array.isArray(entry) ? entry[0] : entry) === "@semantic-release/release-notes-generator");
+if (notesEntry) {
+	try {
+		const { generateNotes } = await import("@semantic-release/release-notes-generator");
+		const message = "feat: sample feature\n\nA body.";
+		const notes = await generateNotes(Array.isArray(notesEntry) ? notesEntry[1] : {}, {
+			cwd: REPO,
+			env: {},
+			logger: { log() {} },
+			options: { repositoryUrl: "https://github.com/wilderness-cloud/gielinor-runelite-plugin.git" },
+			lastRelease: { gitTag: "v0.0.0", version: "0.0.0" },
+			nextRelease: { gitTag: "v0.1.0", version: "0.1.0" },
+			commits: [{
+				hash: "0123456789abcdef0123456789abcdef01234567",
+				message,
+				subject: "feat: sample feature",
+				body: "A body.",
+				commit: { long: "0123456789abcdef0123456789abcdef01234567", short: "0123456" },
+				committerDate: new Date().toISOString(),
+			}],
+		});
+		if (!notes.includes("sample feature")) {
+			fail(`release notes render, but leave out the sample commit:\n${notes}`);
+		} else {
+			ok("release notes render for a sample commit");
+		}
+	} catch (error) {
+		fail(`release notes do not render (${error.message})`);
+	}
+}
+
 // The shim is what turns a PR label into a release type; without analyzeCommits
 // semantic-release would silently fall through to commit-message analysis.
 try {
