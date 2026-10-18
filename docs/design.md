@@ -1,7 +1,8 @@
 # The Gielinor RuneLite plugin: design
 
-Status: **design** (18 Oct 2026). The build and the generated wire contract are set up; the
-plugin itself is not written yet.
+Status: **first version built, not yet tried in game** (18 Oct 2026): linking, push mode and
+the first release's fields, with unit tests. It has not run against a live client or the
+production relay.
 
 ```mermaid
 flowchart TB
@@ -107,8 +108,10 @@ they switch it on. Linking turns it on (the panel says so first); unlinking turn
 
 ### Where the token lives
 
-- **What is stored:** RuneLite config, group `gielinor`, two hidden items:
-  - `refreshToken`, with `secret = true`, so it is masked if ever shown;
+- **What is stored:** RuneLite config, group `gielinor`, set through `ConfigManager` with no
+  config item, so they never appear in the settings panel (`ConfigTokenStore`):
+  - `refreshToken`, and `tokenIssuer`, the server it belongs to (a token for another server
+    reads as not linked);
   - `clientId`, a random id made on first run, one per install (the relay's `client_id`).
 - **The access token lives only in memory.** It lasts an hour.
 - **Refresh tokens rotate** on every use, with a 90-day life. Each refresh saves the new one
@@ -163,7 +166,17 @@ The `Pusher` takes those on the client thread, and builds and sends the request 
    sending on.
    - The panel says "Linked", then shows the character being pushed and the time of the last
      acknowledged push.
-5. **Unlink** revokes the refresh token (RFC 7009) and clears both config items.
+5. **Unlink** revokes the refresh token (RFC 7009), clears the stored token and switches sending
+   off.
+
+**Coming back.** The link and the "Send to Gielinor" setting both live in RuneLite's config, so
+they outlast restarts. On the next start the plugin finds the stored refresh token and is linked
+straight away; on the first push it trades that token for an access token, and sending carries
+on with no action from the player. The plugin writes "Send to Gielinor" at exactly two moments:
+on when a link completes (the player asked to link, having read what is sent) and off on unlink.
+A restored link only *reads* the setting, so a player who switched sending off while staying
+linked keeps it off. A link that has expired sends nothing until the player links again, which
+switches sending back on.
    - A token revoked from the account site shows as **"Link expired — link again"** the next
      time a refresh fails. So does a refresh token past its 90 days.
 

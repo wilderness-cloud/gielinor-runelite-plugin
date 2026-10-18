@@ -13,13 +13,20 @@ it records what RuneLite's Hub allows and why the plugin is shaped the way it is
   published as `buf.build/wilderness-cloud/gielinor`. `buf.gen.yaml` pins a registry commit.
   A contract change lands there first; here it is a pin bump plus `buf generate`.
 - **Generated code is committed** under `src/main/java/cloud/tobbbles/gielinor/runelite/v1/`.
-  Never edit it by hand; regenerate with `buf generate` (buf 1.73.0). It is generated with
+  Never edit it by hand; regenerate with `scripts/generate.sh` (buf 1.73.0), never a bare
+  `buf generate`, which would leave stale classes behind. It is generated with
   `protocolbuffers/java` **v21.12** in **lite** mode, to match the `protobuf-javalite` 3.21.12
   that RuneLite's client exposes. Don't add a protobuf dependency to `build.gradle`, and don't
   move the generator past the runtime RuneLite ships.
 - **Push only.** Never open a port or serve anything: "plugins which expose player information
   over HTTP" are rejected.
 - **The player's own data only**, and nothing until they link the plugin and switch sending on.
+- **Where things are:** `account/` (linking: `AccountClient`, `Link`), `relay/` (`RelayClient`,
+  `Pusher`), `state/` (`StateStore`, `Collectors`, `Convert`, the diary table), `panel/`, and
+  `GielinorPlugin`, which wires game events to them. Everything but `Collectors` and the plugin
+  is tested without a game client: OkHttp is faked by an interceptor (`FakeHttp`) and time by a
+  manual scheduler (`FakeScheduler`). The Hub's standard build provides only JUnit and RuneLite's
+  client to tests, so don't add Mockito or MockWebServer.
 
 # RuneLite plugin development (from RuneLite's example-plugin template)
 

@@ -4,7 +4,7 @@ A RuneLite plugin that sends your character's state to [Gielinor](https://gielin
 so the Gielinor desktop app can track your goals against your real account: skills, quests,
 achievement diaries, inventory, equipment and bank.
 
-**Status: in development.** See [`docs/design.md`](docs/design.md). It builds, but does nothing yet.
+**Status: first version, not yet released.** It links and sends; it hasn't been tried in game yet. See [`docs/design.md`](docs/design.md).
 
 - **You link it yourself.** It sends nothing until you link it to your Gielinor account from its
   side panel. You approve the link on the Gielinor site, in your own browser, and the plugin
