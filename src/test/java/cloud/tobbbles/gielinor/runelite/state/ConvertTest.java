@@ -86,4 +86,15 @@ public class ConvertTest
 		assertTrue(Collectors.isDiaryVarbit(Diaries.REGIONS.get(0).started));
 		assertFalse(Collectors.isDiaryVarbit(-1));
 	}
+
+	@Test
+	public void groupAccountTypesAndOddInputs()
+	{
+		assertEquals(cloud.tobbbles.gielinor.runelite.v1.AccountType.ACCOUNT_TYPE_GROUP_IRONMAN, Convert.accountType(4));
+		assertEquals(cloud.tobbbles.gielinor.runelite.v1.AccountType.ACCOUNT_TYPE_HARDCORE_GROUP_IRONMAN, Convert.accountType(5));
+		assertEquals(cloud.tobbbles.gielinor.runelite.v1.QuestState.QUEST_STATE_UNSPECIFIED, Convert.questState(null));
+		assertTrue(Convert.tracked(net.runelite.client.config.RuneScapeProfileType.STANDARD, null));
+		assertFalse(Convert.tracked(net.runelite.client.config.RuneScapeProfileType.STANDARD,
+			java.util.EnumSet.of(net.runelite.api.WorldType.BETA_WORLD)));
+	}
 }

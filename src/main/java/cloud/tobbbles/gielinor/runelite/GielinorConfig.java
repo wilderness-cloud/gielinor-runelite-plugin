@@ -14,8 +14,9 @@ public interface GielinorConfig extends Config
 	String DEFAULT_SERVER = "https://gielinor.tobbbles.cloud";
 	/** RuneLite's required wording for a third-party server, then what this one sends. */
 	String WARNING = "This feature submits your IP address to a 3rd-party server not controlled or verified by "
-		+ "RuneLite developers. It sends your character's skills, quests, diaries, inventory, equipment and "
-		+ "bank to Gielinor, where only you can see them.";
+		+ "RuneLite developers. It sends your character's skills, quests, diaries, combat achievements, "
+		+ "collection log, boss kill counts, Slayer task, inventory, equipment and bank to Gielinor, where only "
+		+ "you can see them.";
 
 	@ConfigSection(
 		name = "What to send",
@@ -62,19 +63,43 @@ public interface GielinorConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(keyName = "sendInventory", name = "Inventory", description = "What you're carrying", section = sendSection, position = 3)
+	@ConfigItem(keyName = "sendCombatAchievements", name = "Combat achievements", description = "Each task's completion", section = sendSection, position = 3)
+	default boolean sendCombatAchievements()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "sendCollectionLog", name = "Collection log", description = "Your unique count, and each page's items as you open it", section = sendSection, position = 4)
+	default boolean sendCollectionLog()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "sendBossKc", name = "Boss kill counts", description = "Your kill count for each boss", section = sendSection, position = 5)
+	default boolean sendBossKc()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "sendSlayer", name = "Slayer", description = "Your task, points and streak", section = sendSection, position = 6)
+	default boolean sendSlayer()
+	{
+		return true;
+	}
+
+	@ConfigItem(keyName = "sendInventory", name = "Inventory", description = "What you're carrying", section = sendSection, position = 7)
 	default boolean sendInventory()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "sendEquipment", name = "Equipment", description = "What you're wearing", section = sendSection, position = 4)
+	@ConfigItem(keyName = "sendEquipment", name = "Equipment", description = "What you're wearing", section = sendSection, position = 8)
 	default boolean sendEquipment()
 	{
 		return true;
 	}
 
-	@ConfigItem(keyName = "sendBank", name = "Bank", description = "Your bank, as of the last time you opened it", section = sendSection, position = 5)
+	@ConfigItem(keyName = "sendBank", name = "Bank", description = "Your bank, as of the last time you opened it", section = sendSection, position = 9)
 	default boolean sendBank()
 	{
 		return true;

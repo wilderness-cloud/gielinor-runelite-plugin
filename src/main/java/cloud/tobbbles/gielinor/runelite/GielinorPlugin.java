@@ -2,34 +2,30 @@ package cloud.tobbbles.gielinor.runelite;
 
 import cloud.tobbbles.gielinor.runelite.account.AccountClient;
 import cloud.tobbbles.gielinor.runelite.account.Link;
+import cloud.tobbbles.gielinor.runelite.game.ClientGame;
 import cloud.tobbbles.gielinor.runelite.panel.GielinorPanel;
+import cloud.tobbbles.gielinor.runelite.panel.Views;
 import cloud.tobbbles.gielinor.runelite.relay.Pusher;
 import cloud.tobbbles.gielinor.runelite.relay.RelayClient;
 import cloud.tobbbles.gielinor.runelite.state.Collectors;
-import cloud.tobbbles.gielinor.runelite.state.Convert;
 import cloud.tobbbles.gielinor.runelite.state.StateStore;
-import cloud.tobbbles.gielinor.runelite.v1.CharacterRef;
 import cloud.tobbbles.gielinor.runelite.v1.PluginBuild;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
-import java.awt.image.BufferedImage;
-import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.Player;
+import net.runelite.api.ScriptID;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
-import net.runelite.api.gameval.VarPlayerID;
-import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.config.RuneScapeProfileType;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
@@ -45,6 +41,9 @@ import okhttp3.OkHttpClient;
  * Links RuneLite to a Gielinor account and pushes the player's own character state to the
  * RuneLite relay (docs/design.md). Nothing is read or sent until the player links the plugin and
  * "Send to Gielinor" is on; nothing ever connects to the client.
+ *
+ * <p>This class only wires RuneLite to the parts: game events go to {@link GameSession}, which
+ * holds the logic and is tested without a client.
  */
 @Slf4j
 @PluginDescriptor(
@@ -54,9 +53,7 @@ import okhttp3.OkHttpClient;
 )
 public class GielinorPlugin extends Plugin
 {
-	static final String VERSION = "0.1.0";
-	/** Quests change rarely and cost a script each to read: sweep about every five minutes. */
-	private static final int QUEST_SWEEP_TICKS = 500;
+	static final String VERSION = "0.2.0";
 
 	@Inject
 	private Client client;
@@ -85,41 +82,57 @@ public class GielinorPlugin extends Plugin
 	@Inject
 	private ScheduledExecutorService executor;
 
+	private ConfigStore store;
 	private Link link;
 	private Pusher pusher;
-	private Collectors collectors;
+	private GameSession session;
 	private GielinorPanel panel;
 	private NavigationButton navigation;
 	private Link.State lastLinkState;
 
-	// Client thread only.
-	private boolean loginPending;
-	private boolean tracked;
-	private boolean accountDirty;
-	private boolean questsDirty;
-	private boolean diariesDirty;
-	private int ticksSinceQuests;
-
 	@Override
 	protected void startUp()
 	{
+		store = new ConfigStore()
+		{
+			@Override
+			public String get(String key)
+			{
+				return configManager.getConfiguration(GielinorConfig.GROUP, key);
+			}
+
+			@Override
+			public void set(String key, String value)
+			{
+				configManager.setConfiguration(GielinorConfig.GROUP, key, value);
+			}
+
+			@Override
+			public void unset(String key)
+			{
+				configManager.unsetConfiguration(GielinorConfig.GROUP, key);
+			}
+		};
+
 		Scheduler scheduler = new ExecutorScheduler(executor);
-		String server = server();
-		AccountClient account = new AccountClient(okHttpClient, gson, server);
-		link = new Link(account, new ConfigTokenStore(configManager), scheduler, System::currentTimeMillis);
+		String server = Servers.normalise(config.server());
+		link = new Link(new AccountClient(okHttpClient, gson, server), new ConfigTokenStore(store), scheduler,
+			System::currentTimeMillis);
 		lastLinkState = link.state();
 
-		StateStore store = new StateStore();
+		StateStore state = new StateStore();
 		RelayClient relay = new RelayClient(okHttpClient, gson, server + "/runelite");
-		pusher = new Pusher(store, relay::push, link, scheduler, System::currentTimeMillis, clientId(),
-			PluginBuild.newBuilder().setVersion(VERSION).build());
-		collectors = new Collectors(client, itemManager, store, this::groupEnabled, System::currentTimeMillis);
+		pusher = new Pusher(state, relay::push, link, scheduler, System::currentTimeMillis,
+			ConfigTokenStore.clientId(store), PluginBuild.newBuilder().setVersion(VERSION).build());
+		ClientGame game = new ClientGame(client, itemManager);
+		Collectors collectors = new Collectors(game, state, group -> Groups.enabled(config, group),
+			field -> pusher.wanted().contains(field), System::currentTimeMillis);
+		session = new GameSession(game, collectors, pusher, this::sending);
 
 		panel = new GielinorPanel(new PanelActions());
-		BufferedImage icon = ImageUtil.loadImageResource(GielinorPlugin.class, "icon.png");
 		navigation = NavigationButton.builder()
 			.tooltip("Gielinor")
-			.icon(icon)
+			.icon(ImageUtil.loadImageResource(GielinorPlugin.class, "icon.png"))
 			.priority(8)
 			.panel(panel)
 			.build();
@@ -147,7 +160,7 @@ public class GielinorPlugin extends Plugin
 		return configManager.getConfig(GielinorConfig.class);
 	}
 
-	// ---- game events (client thread) ----
+	// ---- game events, on the client thread ----
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
@@ -155,96 +168,45 @@ public class GielinorPlugin extends Plugin
 		GameState state = event.getGameState();
 		if (state == GameState.LOGGED_IN)
 		{
-			// The account hash, profile and name settle over the next tick.
-			loginPending = true;
+			session.loggedIn();
 		}
 		else if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
 		{
-			loginPending = false;
-			tracked = false;
-			pusher.loggedOut();
+			session.leftGame();
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
-		if (!sending())
-		{
-			return;
-		}
-		if (loginPending)
-		{
-			login();
-			return;
-		}
-		if (!tracked)
-		{
-			return;
-		}
-
-		boolean changed = false;
-		if (accountDirty)
-		{
-			accountDirty = false;
-			changed |= collectors.readAccount();
-		}
-		if (diariesDirty)
-		{
-			diariesDirty = false;
-			changed |= collectors.readDiaries();
-		}
-		if (questsDirty || ++ticksSinceQuests >= QUEST_SWEEP_TICKS)
-		{
-			questsDirty = false;
-			ticksSinceQuests = 0;
-			changed |= collectors.readQuests();
-		}
-		if (changed)
-		{
-			pusher.changed();
-		}
+		session.tick();
 	}
 
 	@Subscribe
 	public void onStatChanged(StatChanged event)
 	{
-		if (tracked && sending() && collectors.readSkill(event.getSkill()))
-		{
-			accountDirty = true;
-			pusher.changed();
-		}
+		session.statChanged(event.getSkill());
 	}
 
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
-		if (tracked && sending() && collectors.readContainer(event.getContainerId()))
-		{
-			pusher.changed();
-		}
+		session.containerChanged(event.getContainerId());
 	}
 
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
-		if (!tracked)
+		session.varChanged(event.getVarpId(), event.getVarbitId());
+	}
+
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		if (event.getScriptId() == ScriptID.COLLECTION_DRAW_LIST)
 		{
-			return;
-		}
-		if (event.getVarpId() == VarPlayerID.QP)
-		{
-			// A quest finished: its state and the account's quest points moved.
-			questsDirty = true;
-			accountDirty = true;
-		}
-		if (event.getVarbitId() == VarbitID.IRONMAN)
-		{
-			accountDirty = true;
-		}
-		if (Collectors.isDiaryVarbit(event.getVarbitId()))
-		{
-			diariesDirty = true;
+			// The page's items are drawn by the time the client thread gets back to us.
+			clientThread.invokeLater(session::collectionLogDrawn);
 		}
 	}
 
@@ -262,44 +224,8 @@ public class GielinorPlugin extends Plugin
 		}
 		else if (event.getKey().startsWith("send"))
 		{
-			// A group switched on or off: clear what's off, read what's back on.
-			clientThread.invoke(() ->
-			{
-				if (tracked && sending() && collectors.readAll())
-				{
-					pusher.changed();
-				}
-			});
+			clientThread.invoke(session::groupsChanged);
 		}
-	}
-
-	/** First tick after logging in: who is this, and is it tracked? Then read everything. */
-	private void login()
-	{
-		Player me = client.getLocalPlayer();
-		if (me == null || me.getName() == null)
-		{
-			return;
-		}
-		loginPending = false;
-		RuneScapeProfileType profile = RuneScapeProfileType.getCurrent(client);
-		tracked = Convert.tracked(profile, client.getWorldType());
-		if (!tracked)
-		{
-			pusher.loggedOut();
-			return;
-		}
-		pusher.loggedIn(CharacterRef.newBuilder()
-			.setAccountHash(client.getAccountHash())
-			.setRsn(me.getName())
-			.setWorld(client.getWorld())
-			.setProfile(profile.name())
-			.setLoggedIn(true)
-			.build());
-		collectors.reset();
-		collectors.readAll();
-		ticksSinceQuests = 0;
-		pusher.changed();
 	}
 
 	// ---- link and sending ----
@@ -313,21 +239,7 @@ public class GielinorPlugin extends Plugin
 	{
 		boolean on = sending();
 		pusher.setEnabled(on);
-		if (on)
-		{
-			// Picks up a player already logged in (sending switched on, or the plugin started mid-game).
-			clientThread.invoke(() ->
-			{
-				if (client.getGameState() == GameState.LOGGED_IN)
-				{
-					loginPending = true;
-				}
-			});
-		}
-		else
-		{
-			clientThread.invoke(() -> tracked = false);
-		}
+		clientThread.invoke(() -> session.sendingChanged(on, client.getGameState() == GameState.LOGGED_IN));
 	}
 
 	/** May run on an OkHttp or scheduler thread. */
@@ -344,7 +256,7 @@ public class GielinorPlugin extends Plugin
 		if (now == Link.State.LINKED && before == Link.State.LINKING)
 		{
 			// The player asked to link, having read what is sent: linking turns sending on.
-			configManager.setConfiguration(GielinorConfig.GROUP, GielinorConfig.SEND_ENABLED, true);
+			store.set(GielinorConfig.SEND_ENABLED, "true");
 		}
 		applySending();
 		refreshPanel();
@@ -352,12 +264,7 @@ public class GielinorPlugin extends Plugin
 
 	private void openApprovalPage()
 	{
-		AccountClient.DeviceCode code = link.code();
-		if (code == null)
-		{
-			return;
-		}
-		String url = code.verification_uri_complete != null ? code.verification_uri_complete : code.verification_uri;
+		String url = Servers.approvalUrl(link.code());
 		if (url != null)
 		{
 			LinkBrowser.browse(url);
@@ -367,77 +274,11 @@ public class GielinorPlugin extends Plugin
 	private void refreshPanel()
 	{
 		GielinorPanel shown = panel;
-		if (shown == null)
+		if (shown != null)
 		{
-			return;
+			shown.update(Views.of(link.state(), link.code(), link.problem(), sending(),
+				pusher.character(), pusher.lastAckAt(), pusher.problem()));
 		}
-		GielinorPanel.View view = new GielinorPanel.View();
-		switch (link.state())
-		{
-			case LINKING:
-				view.mode = GielinorPanel.View.Mode.LINKING;
-				AccountClient.DeviceCode code = link.code();
-				view.userCode = code != null ? code.user_code : null;
-				break;
-			case LINKED:
-				view.mode = GielinorPanel.View.Mode.LINKED;
-				break;
-			case EXPIRED:
-				view.mode = GielinorPanel.View.Mode.EXPIRED;
-				break;
-			default:
-				view.mode = GielinorPanel.View.Mode.UNLINKED;
-				break;
-		}
-		view.sending = sending();
-		CharacterRef character = pusher.character();
-		view.character = character != null && character.getLoggedIn() ? character.getRsn() : null;
-		view.lastAckAt = pusher.lastAckAt();
-		view.problem = link.problem() != null ? link.problem() : (view.sending ? pusher.problem() : null);
-		shown.update(view);
-	}
-
-	private boolean groupEnabled(String group)
-	{
-		switch (group)
-		{
-			case StateStore.SKILLS:
-				return config.sendSkills();
-			case StateStore.QUESTS:
-				return config.sendQuests();
-			case StateStore.DIARIES:
-				return config.sendDiaries();
-			case StateStore.INVENTORY:
-				return config.sendInventory();
-			case StateStore.EQUIPMENT:
-				return config.sendEquipment();
-			case StateStore.BANK:
-				return config.sendBank();
-			default:
-				return true;
-		}
-	}
-
-	private String server()
-	{
-		String server = config.server() == null ? "" : config.server().trim();
-		while (server.endsWith("/"))
-		{
-			server = server.substring(0, server.length() - 1);
-		}
-		return server.isEmpty() ? GielinorConfig.DEFAULT_SERVER : server;
-	}
-
-	/** One id per install, made on first run: the relay's client_id. */
-	private String clientId()
-	{
-		String id = configManager.getConfiguration(GielinorConfig.GROUP, "clientId");
-		if (id == null || !id.matches("[A-Za-z0-9_-]{8,64}"))
-		{
-			id = UUID.randomUUID().toString();
-			configManager.setConfiguration(GielinorConfig.GROUP, "clientId", id);
-		}
-		return id;
 	}
 
 	private final class PanelActions implements GielinorPanel.Actions
@@ -463,14 +304,14 @@ public class GielinorPlugin extends Plugin
 		@Override
 		public void unlink()
 		{
-			configManager.setConfiguration(GielinorConfig.GROUP, GielinorConfig.SEND_ENABLED, false);
+			store.set(GielinorConfig.SEND_ENABLED, "false");
 			link.unlink();
 		}
 
 		@Override
 		public void startSending()
 		{
-			configManager.setConfiguration(GielinorConfig.GROUP, GielinorConfig.SEND_ENABLED, true);
+			store.set(GielinorConfig.SEND_ENABLED, "true");
 		}
 	}
 }

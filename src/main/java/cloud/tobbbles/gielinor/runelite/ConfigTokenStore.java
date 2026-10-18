@@ -1,7 +1,7 @@
 package cloud.tobbbles.gielinor.runelite;
 
 import cloud.tobbbles.gielinor.runelite.account.TokenStore;
-import net.runelite.client.config.ConfigManager;
+import java.util.UUID;
 
 /**
  * The refresh token in RuneLite's config (docs/design.md, "Where the token lives"). It is set and
@@ -9,12 +9,13 @@ import net.runelite.client.config.ConfigManager;
  */
 class ConfigTokenStore implements TokenStore
 {
-	private static final String REFRESH_TOKEN = "refreshToken";
-	private static final String ISSUER = "tokenIssuer";
+	static final String REFRESH_TOKEN = "refreshToken";
+	static final String ISSUER = "tokenIssuer";
+	static final String CLIENT_ID = "clientId";
 
-	private final ConfigManager config;
+	private final ConfigStore config;
 
-	ConfigTokenStore(ConfigManager config)
+	ConfigTokenStore(ConfigStore config)
 	{
 		this.config = config;
 	}
@@ -22,26 +23,41 @@ class ConfigTokenStore implements TokenStore
 	@Override
 	public String refreshToken()
 	{
-		return config.getConfiguration(GielinorConfig.GROUP, REFRESH_TOKEN);
+		return config.get(REFRESH_TOKEN);
 	}
 
 	@Override
 	public String issuer()
 	{
-		return config.getConfiguration(GielinorConfig.GROUP, ISSUER);
+		return config.get(ISSUER);
 	}
 
 	@Override
 	public void save(String issuer, String refreshToken)
 	{
-		config.setConfiguration(GielinorConfig.GROUP, ISSUER, issuer);
-		config.setConfiguration(GielinorConfig.GROUP, REFRESH_TOKEN, refreshToken);
+		config.set(ISSUER, issuer);
+		config.set(REFRESH_TOKEN, refreshToken);
 	}
 
 	@Override
 	public void clear()
 	{
-		config.unsetConfiguration(GielinorConfig.GROUP, REFRESH_TOKEN);
-		config.unsetConfiguration(GielinorConfig.GROUP, ISSUER);
+		config.unset(REFRESH_TOKEN);
+		config.unset(ISSUER);
+	}
+
+	/**
+	 * One id per install, made on first run: the relay's client_id, which it requires to be 8 to 64
+	 * letters, digits, - or _. A stored id that isn't is replaced.
+	 */
+	static String clientId(ConfigStore config)
+	{
+		String id = config.get(CLIENT_ID);
+		if (id == null || !id.matches("[A-Za-z0-9_-]{8,64}"))
+		{
+			id = UUID.randomUUID().toString();
+			config.set(CLIENT_ID, id);
+		}
+		return id;
 	}
 }

@@ -1,8 +1,9 @@
 # The Gielinor RuneLite plugin: design
 
 Status: **first version built, not yet tried in game** (18 Oct 2026): linking, push mode and
-the first release's fields, with unit tests. It has not run against a live client or the
-production relay.
+the first release's fields (now with combat achievements, the collection log, boss kill counts
+and the Slayer task), with unit tests at over 90% line and branch coverage. It has not run
+against a live client or the production relay.
 
 ```mermaid
 flowchart TB
@@ -134,20 +135,26 @@ runelite-plugin.properties      # displayName=Gielinor, build=standard, plugins=
 buf.gen.yaml                    # protoc-gen-java v21.12, lite, from buf.build/wilderness-cloud/gielinor (pinned)
 LICENSE, README.md, icon.png
 src/main/java/cloud/tobbbles/gielinor/runelite/
-  GielinorPlugin.java           # wiring: events → collectors → Pusher; panel; lifecycle
+  GielinorPlugin.java           # wiring only: RuneLite events → GameSession; panel; lifecycle
+  GameSession.java              # client-thread logic: login, tracked or not, which groups to read when
+  game/Game.java                # the seam over Client and ItemManager (ClientGame); tests use FakeGame
   GielinorConfig.java           # what to send, the warning, hidden token items
   panel/GielinorPanel.java      # link / unlink, the code, status, last push
   account/AccountClient.java    # discovery, device authorization, polling, refresh, revoke
   account/Link.java             # the link's state machine, persisted through ConfigManager
   relay/RelayClient.java        # Connect unary POST, binary protobuf, gRPC status mapping
   relay/Pusher.java             # dirty set, debounce, seq, heartbeat, backoff, masks
-  state/*Collector.java         # one per domain: game state → CharacterState field + dirty paths
+  state/StateStore.java         # one value per mask path, versions, snapshots
+  state/Collectors.java         # each group: game state → StateStore paths
+  state/*Reader.java            # combat achievements, collection log, boss KC, Slayer
 src/main/java/cloud/tobbbles/gielinor/runelite/v1/   # generated (managed mode's java_package_prefix), committed
 src/test/java/...
 ```
 
 **Collectors run on the client thread**, because quest states, varbits and item containers must
-be read there. Each one builds its slice of `CharacterState` and returns the paths it changed.
+be read there. Each group writes its paths into the `StateStore` and says whether any changed.
+They read the game only through `Game`, so `GameSession`, `Collectors` and the readers are
+tested against a `FakeGame` without a client.
 The `Pusher` takes those on the client thread, and builds and sends the request off it.
 
 ## Linking (the device grant)
@@ -238,20 +245,29 @@ relay (plan item RL7) loses nothing:
 
 | Field | From | When |
 |---|---|---|
-| `account` (type, members) | `Client.getAccountType()`, world type | login |
+| `account` (type, members) | `VarbitID.IRONMAN`, world type | login |
 | `skills` (level, xp; per entry) | `Client.getRealSkillLevel` / `getSkillExperience` | `StatChanged` |
 | `quests` (state; per entry) | `Quest.getState(client)` | login, quest varp changes |
 | `diaries` | the diary varbits (`VarbitID.*_DIARY_*_COMPLETE`, as the MCP plugin's `ProgressProvider` reads them) | login, varbit changes |
 | `inventory`, `equipment` | `ItemContainerChanged` | change |
 | `bank` | bank container, on the bank closing | bank close |
+| `combat_achievements` (per task) | the tier enums 3981–3986, task structs (params 1306 id, 1308 name), `CA_TASK_COMPLETED_0..20` bits | while `wanted`; the completion varps |
+| `collection_log` counts | `COLLECTION_COUNT`, `COLLECTION_COUNT_MAX` | always; those varps |
+| `collection_log` pages | the tab structs 471–475 and their page enums | while `wanted` |
+| `collection_log` items (per item) | the page on screen (`COLLECTION_DRAW_LIST`; opacity 0 is obtained) | as the player opens pages |
+| `boss_kc` (per boss) | `DBTableID.HiscoresBossesInfo` (name, kill-count varp) | login; those varps |
+| `slayer` | task varps and the SlayerTask / SlayerArea / SlayerTaskSublist tables, points, streak (as RuneLite's Slayer plugin reads them) | login; the Slayer vars |
 
 Each group has its own config toggle (on by default once linked). That way a player can keep,
 say, their bank to themselves. A toggled-off group is never collected, and its paths are
 pushed once **unset**, so the relay forgets them.
 
+The collection log is only ever as complete as the pages the player has opened: the game keeps
+no per-item var. Items seen in an earlier session stay at the relay, because each is its own
+path; `observed.partial` says whether every page has been seen.
+
 Later, each in its own release:
-- `combat_achievements` and `collection_log`, built only while `wanted`;
-- `boss_kc`, `slayer`, `farming` and `charges`;
+- `farming` and `charges`;
 - events (loot, level-ups, deaths), for the outbox.
 
 `position` and `vitals` stay out until there's a reason: where a player is right now is the
@@ -272,9 +288,12 @@ most sensitive thing the plugin could send.
   - A CI job builds against `latest.release`, which catches the day RuneLite moves its protobuf
     version.
 - **Tests.**
-  - JUnit with a mocked `Client` for the collectors.
-  - OkHttp's `MockWebServer` for `AccountClient` and `RelayClient`: the device grant's states,
-    refresh rotation, and each status code.
+  - JUnit only (the Hub's standard build gives tests nothing else): `FakeGame` for the
+    collectors, readers and `GameSession`; `FakeHttp` (an OkHttp interceptor) for
+    `AccountClient` and `RelayClient`; `FakeScheduler` for time.
+  - `scripts/coverage.sh` runs JaCoCo through an init script (so `build.gradle` stays the
+    template's) and fails under 90% of lines or branches. It leaves out the generated code and
+    the classes that only touch RuneLite: `GielinorPlugin`, `ClientGame`, `GielinorPanel`.
   - A contract test that decodes our pushes with the relay's own schema (round trip through the
     generated classes).
 - **Release.** A `v*` tag runs a workflow that builds and tests the tagged commit, then prints

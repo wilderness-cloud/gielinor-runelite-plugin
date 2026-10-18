@@ -1,0 +1,51 @@
+// Test coverage with JaCoCo, kept out of build.gradle: the Plugin Hub builds this repository with
+// its own copy of the template's build.gradle (build=standard), so ours stays template-shaped.
+//
+//   scripts/coverage.sh      (= ./gradlew -I gradle/coverage.gradle test jacocoTestReport jacocoTestCoverageVerification)
+//
+// Counted: everything we wrote and can test without a game client. Left out, and why:
+//   - cloud/tobbbles/gielinor/runelite/v1/**   generated from the wire contract
+//   - GielinorPlugin                           wiring RuneLite's injector and events to GameSession
+//   - game/ClientGame                          straight reads from RuneLite's Client (the Game seam)
+//   - panel/GielinorPanel                      Swing layout; what it shows is Views, which is counted
+// The rule: 90% of lines, and of branches, across what's counted.
+def excluded = [
+	'cloud/tobbbles/gielinor/runelite/v1/**',
+	'cloud/tobbbles/gielinor/runelite/GielinorPlugin*',
+	'cloud/tobbbles/gielinor/runelite/game/ClientGame*',
+	'cloud/tobbbles/gielinor/runelite/panel/GielinorPanel*',
+]
+
+allprojects {
+	apply plugin: 'jacoco'
+	jacoco {
+		toolVersion = '0.8.12'
+	}
+	afterEvaluate {
+		def counted = files(sourceSets.main.output.classesDirs.files.collect { fileTree(dir: it, excludes: excluded) })
+		jacocoTestReport {
+			dependsOn test
+			classDirectories.setFrom(counted)
+			reports {
+				xml.required = true
+				html.required = true
+			}
+		}
+		jacocoTestCoverageVerification {
+			dependsOn test
+			classDirectories.setFrom(counted)
+			violationRules {
+				rule {
+					limit {
+						counter = 'LINE'
+						minimum = 0.90
+					}
+					limit {
+						counter = 'BRANCH'
+						minimum = 0.90
+					}
+				}
+			}
+		}
+	}
+}

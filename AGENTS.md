@@ -22,11 +22,15 @@ it records what RuneLite's Hub allows and why the plugin is shaped the way it is
   over HTTP" are rejected.
 - **The player's own data only**, and nothing until they link the plugin and switch sending on.
 - **Where things are:** `account/` (linking: `AccountClient`, `Link`), `relay/` (`RelayClient`,
-  `Pusher`), `state/` (`StateStore`, `Collectors`, `Convert`, the diary table), `panel/`, and
-  `GielinorPlugin`, which wires game events to them. Everything but `Collectors` and the plugin
-  is tested without a game client: OkHttp is faked by an interceptor (`FakeHttp`) and time by a
-  manual scheduler (`FakeScheduler`). The Hub's standard build provides only JUnit and RuneLite's
-  client to tests, so don't add Mockito or MockWebServer.
+  `Pusher`), `state/` (`StateStore`, `Collectors`, the readers, `Convert`, the diary table),
+  `game/` (`Game`, the seam over the client, and `ClientGame`), `panel/`, `GameSession` (the
+  client-thread logic) and `GielinorPlugin`, which only forwards RuneLite events to it.
+  Everything but `ClientGame`, `GielinorPanel` and the plugin is tested without a game client:
+  the game by `FakeGame`, OkHttp by an interceptor (`FakeHttp`) and time by a manual scheduler
+  (`FakeScheduler`). The Hub's standard build provides only JUnit and RuneLite's client to
+  tests, so don't add Mockito or MockWebServer.
+- **Coverage:** `scripts/coverage.sh` must pass (90% of lines and branches). Read the game
+  through `Game`, not `Client`, so new logic stays testable.
 
 # RuneLite plugin development (from RuneLite's example-plugin template)
 

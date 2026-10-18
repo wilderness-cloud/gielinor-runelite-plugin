@@ -109,4 +109,31 @@ public class StateStoreTest
 	{
 		new StateStore().put("skills.attack-level", skill(1, 0));
 	}
+
+	@Test
+	public void knowsTheShapesTheRelayAccepts()
+	{
+		for (String ok : new String[]{"account", "bank", "slayer", "skills.ATTACK", "boss_kc.K2", "quests.A_B_C",
+			"combat_achievements.observed", "combat_achievements.tasks.0", "combat_achievements.tasks.2147483647",
+			"collection_log.observed", "collection_log.unique_obtained", "collection_log.unique_total",
+			"collection_log.items.22006", "collection_log.pages.VORKATH"})
+		{
+			assertTrue(ok, StateStore.knownPath(ok));
+		}
+		for (String bad : new String[]{"skills", "nope", "skills.attack", "skills.", "skills.A-B", "account.type",
+			"combat_achievements", "combat_achievements.tasks", "combat_achievements.tasks.x",
+			"combat_achievements.tasks.2147483648", "combat_achievements.tasks.12345678901",
+			"combat_achievements.tasks.", "combat_achievements.pages.1", "collection_log.items.-1",
+			"collection_log.pages.vorkath", "collection_log.other", "collection_log.unknown.X",
+			"bank.items.1", "skills.ATTACK.level.x", "nope.x.y"})
+		{
+			assertFalse(bad, StateStore.knownPath(bad));
+		}
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void refusesAPathTheRelayWouldRefuse()
+	{
+		new StateStore().put("skills.ATTACK.level", 1);
+	}
 }

@@ -134,4 +134,50 @@ public class RelayClientTest
 		http.fail();
 		assertEquals(Status.NETWORK, push(small()).status);
 	}
+
+	@Test
+	public void anAddressThatIsntAUrlIsRefusedLocally()
+	{
+		RelayClient bad = new RelayClient(http.client, new Gson(), "nope/");
+		List<PushResult> results = new ArrayList<>();
+		bad.push(small(), "access-1", results::add);
+		assertEquals(Status.INVALID_ARGUMENT, results.get(0).status);
+		assertEquals(0, http.requests().size());
+	}
+
+	@Test
+	public void anUnreadableAnswerIsOther()
+	{
+		http.answer(request -> FakeHttp.response(request, 200,
+			ResponseBody.create(MediaType.get("application/proto"), new byte[]{(byte) 0xff, 0x01})));
+		assertEquals(Status.OTHER, push(small()).status);
+	}
+
+	@Test
+	public void unreadableHeadersAreIgnored()
+	{
+		http.answer(request -> error(request, 400, "{\"code\":\"failed_precondition\"}",
+			"gielinor-last-seq", "soon", "Retry-After", "later"));
+		PushResult result = push(small());
+		assertEquals(Status.FAILED_PRECONDITION, result.status);
+		assertNull(result.lastSeq);
+		assertEquals(0, result.retryAfterMs);
+
+		http.answer(request -> error(request, 429, "{}", "Retry-After", "-5"));
+		assertEquals(0, push(small()).retryAfterMs);
+	}
+
+	@Test
+	public void connectCodesAndHttpStatuses()
+	{
+		assertEquals(Status.UNAVAILABLE, Status.fromConnect("unavailable"));
+		assertEquals(Status.INVALID_ARGUMENT, Status.fromConnect("invalid_argument"));
+		assertEquals(Status.OTHER, Status.fromConnect("internal"));
+		assertEquals(Status.UNAUTHENTICATED, Status.fromHttp(401));
+		assertEquals(Status.PERMISSION_DENIED, Status.fromHttp(403));
+		assertEquals(Status.RESOURCE_EXHAUSTED, Status.fromHttp(429));
+		assertEquals(Status.UNAVAILABLE, Status.fromHttp(502));
+		assertEquals(Status.UNAVAILABLE, Status.fromHttp(504));
+		assertEquals(Status.OTHER, Status.fromHttp(500));
+	}
 }
