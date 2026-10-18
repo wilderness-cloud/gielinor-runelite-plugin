@@ -126,7 +126,7 @@ public class GielinorPlugin extends Plugin
 			ConfigTokenStore.clientId(store), PluginBuild.newBuilder().setVersion(VERSION).build());
 		ClientGame game = new ClientGame(client, itemManager);
 		Collectors collectors = new Collectors(game, state, group -> Groups.enabled(config, group),
-			field -> pusher.wanted().contains(field), System::currentTimeMillis);
+			System::currentTimeMillis);
 		session = new GameSession(game, collectors, pusher, this::sending);
 
 		panel = new GielinorPanel(new PanelActions());

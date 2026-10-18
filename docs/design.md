@@ -220,8 +220,9 @@ matter for the plugin:
   rising across restarts.
 - **Masks in the answer.**
   - `missing` paths are added to the dirty set.
-  - `wanted` turns on the expensive collectors (`combat_achievements`, `collection_log`) while
-    they're named.
+  - `wanted` names hot fields (`combat`, `vitals`, `position`) to push while they're named.
+    None is sent yet. Everything else is pushed whenever it is read, so the relay holds a
+    timestamped copy of each field whether or not anyone has looked at it.
   - `next_heartbeat_s` replaces the heartbeat interval.
 - **Errors, by Connect status.**
 
@@ -251,9 +252,9 @@ relay (plan item RL7) loses nothing:
 | `diaries` | the diary varbits (`VarbitID.*_DIARY_*_COMPLETE`, as the MCP plugin's `ProgressProvider` reads them) | login, varbit changes |
 | `inventory`, `equipment` | `ItemContainerChanged` | change |
 | `bank` | bank container, on the bank closing | bank close |
-| `combat_achievements` (per task) | the tier enums 3981–3986, task structs (params 1306 id, 1308 name), `CA_TASK_COMPLETED_0..20` bits | while `wanted`; the completion varps |
+| `combat_achievements` (per task) | the tier enums 3981–3986, task structs (params 1306 id, 1308 name), `CA_TASK_COMPLETED_0..20` bits | login; the completion varps |
 | `collection_log` counts | `COLLECTION_COUNT`, `COLLECTION_COUNT_MAX` | always; those varps |
-| `collection_log` pages | the tab structs 471–475 and their page enums | while `wanted` |
+| `collection_log` pages | the tab structs 471–475 and their page enums | login |
 | `collection_log` items (per item) | the page on screen (`COLLECTION_DRAW_LIST`; opacity 0 is obtained) | as the player opens pages |
 | `boss_kc` (per boss) | `DBTableID.HiscoresBossesInfo` (name, kill-count varp) | login; those varps |
 | `slayer` | task varps and the SlayerTask / SlayerArea / SlayerTaskSublist tables, points, streak (as RuneLite's Slayer plugin reads them) | login; the Slayer vars |

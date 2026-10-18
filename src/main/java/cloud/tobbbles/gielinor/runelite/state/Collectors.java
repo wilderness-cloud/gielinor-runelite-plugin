@@ -37,9 +37,9 @@ import net.runelite.api.gameval.VarbitID;
  * the {@link Game} may be read. Each returns whether anything changed, so the caller knows to tell
  * the pusher.
  *
- * <p>Only the player's own state is read, and only the groups the player left on. Combat
- * achievements and the collection log catalog are large, so they are built only while the relay
- * says someone wants them ({@code PushResponse.wanted}).
+ * <p>Only the player's own state is read, and only the groups the player left on. Everything the
+ * client can read is pushed whenever it is read, so the relay holds a timestamped copy of each
+ * group whether or not anyone has looked at it yet.
  */
 public class Collectors
 {
@@ -71,7 +71,6 @@ public class Collectors
 	private final Game game;
 	private final StateStore store;
 	private final Predicate<String> groupEnabled;
-	private final Predicate<String> wanted;
 	private final LongSupplier clock;
 	private final CollectionLogReader collectionLog = new CollectionLogReader();
 	private final BossKcReader bossKc = new BossKcReader();
@@ -83,15 +82,12 @@ public class Collectors
 
 	/**
 	 * @param groupEnabled whether the player left a group on
-	 * @param wanted       whether the relay wants a hot field built (combat_achievements, collection_log)
 	 */
-	public Collectors(Game game, StateStore store, Predicate<String> groupEnabled, Predicate<String> wanted,
-		LongSupplier clock)
+	public Collectors(Game game, StateStore store, Predicate<String> groupEnabled, LongSupplier clock)
 	{
 		this.game = game;
 		this.store = store;
 		this.groupEnabled = groupEnabled;
-		this.wanted = wanted;
 		this.clock = clock;
 	}
 
@@ -237,7 +233,7 @@ public class Collectors
 	/** Every task's completion, while the relay wants them. One map entry per task. */
 	public boolean readCombatAchievements()
 	{
-		if (!groupEnabled.test(StateStore.COMBAT_ACHIEVEMENTS) || !wanted.test(StateStore.COMBAT_ACHIEVEMENTS))
+		if (!groupEnabled.test(StateStore.COMBAT_ACHIEVEMENTS))
 		{
 			return false;
 		}
@@ -274,16 +270,13 @@ public class Collectors
 		}
 		boolean changed = store.put(StateStore.COLLECTION_LOG + ".unique_obtained", game.varp(VarPlayerID.COLLECTION_COUNT));
 		changed |= store.put(StateStore.COLLECTION_LOG + ".unique_total", game.varp(VarPlayerID.COLLECTION_COUNT_MAX));
-		if (wanted.test(StateStore.COLLECTION_LOG))
+		for (Map.Entry<String, CollectionLogPage> page : collectionLog.catalog(game).entrySet())
 		{
-			for (Map.Entry<String, CollectionLogPage> page : collectionLog.catalog(game).entrySet())
+			String path = StateStore.COLLECTION_LOG + ".pages." + page.getKey();
+			// A page opened this session already holds a fuller entry: keep it.
+			if (store.get(path) == null)
 			{
-				String path = StateStore.COLLECTION_LOG + ".pages." + page.getKey();
-				// A page opened this session already holds a fuller entry: keep it.
-				if (store.get(path) == null)
-				{
-					changed |= store.put(path, page.getValue());
-				}
+				changed |= store.put(path, page.getValue());
 			}
 		}
 		return stampCollectionLog(changed);

@@ -32,7 +32,6 @@ public class CollectorsTest
 	private FakeGame game;
 	private StateStore store;
 	private Set<String> off;
-	private Set<String> wanted;
 	private long now;
 	private Collectors collectors;
 
@@ -42,9 +41,8 @@ public class CollectorsTest
 		game = new FakeGame();
 		store = new StateStore();
 		off = new HashSet<>();
-		wanted = new HashSet<>();
 		now = 1_760_000_000_000L;
-		collectors = new Collectors(game, store, g -> !off.contains(g), wanted::contains, () -> now);
+		collectors = new Collectors(game, store, g -> !off.contains(g), () -> now);
 	}
 
 	/** What a push would carry now; clears the store's changes as an acknowledgement would. */
@@ -256,12 +254,9 @@ public class CollectorsTest
 	}
 
 	@Test
-	public void combatAchievementsAreBuiltOnlyWhileWanted()
+	public void everyCombatAchievementIsSentWithWhenItWasRead()
 	{
 		combatAchievementTables();
-		assertFalse(collectors.readCombatAchievements());
-
-		wanted.add(StateStore.COMBAT_ACHIEVEMENTS);
 		assertTrue(collectors.readCombatAchievements());
 
 		CharacterState state = pushed();
@@ -277,7 +272,6 @@ public class CollectorsTest
 	public void aCompletedTaskSendsOneEntry()
 	{
 		combatAchievementTables();
-		wanted.add(StateStore.COMBAT_ACHIEVEMENTS);
 		collectors.readCombatAchievements();
 		pushed();
 
@@ -321,19 +315,14 @@ public class CollectorsTest
 	}
 
 	@Test
-	public void theUniqueCountsAreAlwaysSentAndTheCatalogOnlyWhileWanted()
+	public void sendsTheUniqueCountsAndThePageList()
 	{
 		collectionLogTables();
 		assertTrue(collectors.readCollectionLog());
 		CharacterState state = pushed();
 		assertEquals(300, state.getCollectionLog().getUniqueObtained());
 		assertEquals(1600, state.getCollectionLog().getUniqueTotal());
-		assertEquals(0, state.getCollectionLog().getPagesCount());
-		assertTrue(state.getCollectionLog().getObserved().getPartial());
-
-		wanted.add(StateStore.COLLECTION_LOG);
-		assertTrue(collectors.readCollectionLog());
-		state = pushed();
+		assertTrue("no page opened yet", state.getCollectionLog().getObserved().getPartial());
 		assertEquals(2, state.getCollectionLog().getPagesCount());
 		assertEquals("BOSSES", state.getCollectionLog().getPagesOrThrow("VORKATH").getTab());
 		assertEquals(Arrays.asList(22006, 21907), state.getCollectionLog().getPagesOrThrow("VORKATH").getItemIdsList());
@@ -361,7 +350,6 @@ public class CollectorsTest
 		assertTrue("one of two pages seen", state.getCollectionLog().getObserved().getPartial());
 
 		// The catalog doesn't overwrite a page opened this session.
-		wanted.add(StateStore.COLLECTION_LOG);
 		collectors.readCollectionLog();
 		assertTrue(pushed().getCollectionLog().getPagesMap().containsKey("PHOSANIS_NIGHTMARE"));
 		assertTrue(((cloud.tobbbles.gielinor.runelite.v1.CollectionLogPage) store.get("collection_log.pages.VORKATH"))
@@ -518,7 +506,6 @@ public class CollectorsTest
 	{
 		combatAchievementTables();
 		collectionLogTables();
-		wanted.addAll(Arrays.asList(StateStore.COMBAT_ACHIEVEMENTS, StateStore.COLLECTION_LOG));
 		game.container(InventoryID.INV, new Game.Slot[0])
 			.container(InventoryID.WORN, new Game.Slot[0])
 			.container(InventoryID.BANK, new Game.Slot[0]);

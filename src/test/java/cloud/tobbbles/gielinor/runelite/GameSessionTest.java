@@ -9,8 +9,6 @@ import cloud.tobbbles.gielinor.runelite.state.Collectors;
 import cloud.tobbbles.gielinor.runelite.state.StateStore;
 import cloud.tobbbles.gielinor.runelite.v1.PluginBuild;
 import cloud.tobbbles.gielinor.runelite.v1.PushRequest;
-import cloud.tobbbles.gielinor.runelite.v1.PushResponse;
-import com.google.protobuf.FieldMask;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -49,8 +47,7 @@ public class GameSessionTest
 		StateStore store = new StateStore();
 		pusher = new Pusher(store, transport, new FakeCredentials(), scheduler, scheduler::now, "install-1",
 			PluginBuild.newBuilder().setVersion("test").build());
-		Collectors collectors = new Collectors(game, store, g -> !off.contains(g), f -> pusher.wanted().contains(f),
-			scheduler::now);
+		Collectors collectors = new Collectors(game, store, g -> !off.contains(g), scheduler::now);
 		session = new GameSession(game, collectors, pusher, () -> sending);
 		sending = true;
 		pusher.setEnabled(true);
@@ -261,24 +258,22 @@ public class GameSessionTest
 	}
 
 	@Test
-	public void aFieldTheRelayStartsWantingIsBuiltOnTheNextTick()
+	public void combatAchievementsGoOutOnLoginAndOnEachCompletion()
 	{
-		game.enumOf(3981, 900).struct(900, 1306, 0).struct(900, 1308, "Noxious Foe");
-		loggedIn();
+		game.enumOf(3981, 900, 901).struct(900, 1306, 0).struct(900, 1308, "Noxious Foe")
+			.struct(901, 1306, 1).struct(901, 1308, "Barrows Novice");
 		session.loggedIn();
 		session.tick();
 		scheduler.runDue();
-		transport.ok(PushResponse.newBuilder()
-			.setWanted(FieldMask.newBuilder().addPaths(StateStore.COMBAT_ACHIEVEMENTS).addPaths(StateStore.COLLECTION_LOG))
-			.build());
+		assertTrue(transport.last().getUpdateMask().getPathsList().contains("combat_achievements.tasks.0"));
+		transport.ok();
 
+		game.varp(VarPlayerID.CA_TASK_COMPLETED_0, 0b10);
+		session.varChanged(VarPlayerID.CA_TASK_COMPLETED_0, -1);
 		session.tick();
 		List<String> mask = nextMask();
-		assertTrue(mask.toString(), mask.contains("combat_achievements.tasks.0"));
-
-		session.tick();
-		scheduler.advance(5_000);
-		assertNull("wanted unchanged: nothing more", transport.waiting);
+		assertTrue(mask.toString(), mask.contains("combat_achievements.tasks.1"));
+		assertFalse(mask.toString(), mask.contains("combat_achievements.tasks.0"));
 	}
 
 	@Test

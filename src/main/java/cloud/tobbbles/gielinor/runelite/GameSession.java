@@ -4,11 +4,7 @@ import cloud.tobbbles.gielinor.runelite.game.Game;
 import cloud.tobbbles.gielinor.runelite.relay.Pusher;
 import cloud.tobbbles.gielinor.runelite.state.Collectors;
 import cloud.tobbbles.gielinor.runelite.state.Convert;
-import cloud.tobbbles.gielinor.runelite.state.StateStore;
 import cloud.tobbbles.gielinor.runelite.v1.CharacterRef;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.function.BooleanSupplier;
 import net.runelite.api.Skill;
 import net.runelite.api.gameval.VarPlayerID;
@@ -43,7 +39,6 @@ public class GameSession
 	private boolean bossKcDirty;
 	private boolean slayerDirty;
 	private int ticksSinceQuests;
-	private Set<String> wanted = Collections.emptySet();
 
 	/** @param sending linked, and "Send to Gielinor" is on */
 	public GameSession(Game game, Collectors collectors, Pusher pusher, BooleanSupplier sending)
@@ -102,7 +97,6 @@ public class GameSession
 		{
 			return;
 		}
-		noteWanted();
 
 		boolean changed = false;
 		if (accountDirty)
@@ -237,28 +231,8 @@ public class GameSession
 			.setLoggedIn(true)
 			.build());
 		collectors.reset();
-		wanted = new HashSet<>(pusher.wanted());
 		collectors.readAll();
 		ticksSinceQuests = 0;
 		pusher.changed();
-	}
-
-	/** The relay started wanting a hot field: build it on this tick. */
-	private void noteWanted()
-	{
-		Set<String> now = new HashSet<>(pusher.wanted());
-		if (now.equals(wanted))
-		{
-			return;
-		}
-		for (String field : now)
-		{
-			if (!wanted.contains(field))
-			{
-				combatAchievementsDirty |= StateStore.COMBAT_ACHIEVEMENTS.equals(field);
-				collectionLogDirty |= StateStore.COLLECTION_LOG.equals(field);
-			}
-		}
-		wanted = now;
 	}
 }
